@@ -15,8 +15,7 @@ public:
     double location_altitude() const;
 
 private:
-    class impl;
-    impl *pimpl;
+    void *pimpl;
 };
 
 #endif /* MD_H */

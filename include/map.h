@@ -4,8 +4,6 @@
 #include <version.h>
 #include <geo.h>
 
-#if APILEVEL >= 2
-
 class map
 {
     map(map const &);
@@ -18,10 +16,8 @@ public:
     geo const &location() const;
 
 private:
-    class impl;
-    impl *pimpl;
+    void *pimpl;
+    geo *g;
 };
-
-#endif /* APILEVEL >= 2 */
 
 #endif /* MAP_H */

@@ -8,19 +8,20 @@ class geo
     geo(geo const &);
     geo &operator=(geo const &);
 
+    friend class map;
+    geo(void *p);
+
 public:
     geo();
     ~geo();
 
     double latitude() const;
     double longitude() const;
-#if APILEVEL >= 2
     double altitude() const;
-#endif // APILEVEL >= 2
 
 private:
-    class impl;
-    impl *pimpl;
+    void *pimpl;
+    bool own;
 };
 
 #endif /* GEO_H */

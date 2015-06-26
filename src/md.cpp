@@ -1,37 +1,51 @@
 #include <md.h>
+#include <dlfcn.h>
 #include <stdexcept>
 
-#if APILEVEL < 2
-class md::impl
+typedef void *(*md_impl_create_t)();
+typedef void (*md_impl_destroy_t)(void *p);
+typedef double (*md_impl_location_altitude_t)(void *p);
+
+static bool md_impl_initialized = false;
+static md_impl_create_t md_impl_create = NULL;
+static md_impl_destroy_t md_impl_destroy = NULL;
+static md_impl_location_altitude_t md_impl_location_altitude = NULL;
+
+static void md_init()
 {
-public:
-    impl() :alt(1.3) {}
+    if (md_impl_initialized)
+        return;
 
-    double location_altitude() const {return alt;}
+    void *pc = ::dlopen(LIBV, RTLD_NOW);
+    if (!pc)
+        throw std::runtime_error("dlopen() failed");
 
-private:
-    double alt;
-};
-#endif // APILEVEL < 2
+    md_impl_create = reinterpret_cast<md_impl_create_t>(::dlsym(pc, "md_impl_create"));
+    md_impl_destroy = reinterpret_cast<md_impl_destroy_t>(::dlsym(pc, "md_impl_destroy"));
+    md_impl_location_altitude = reinterpret_cast<md_impl_location_altitude_t>(::dlsym(pc, "md_impl_location_altitude"));
+
+    ::dlclose(pc);
+
+    md_impl_initialized = true;
+}
 
 md::md()
-#if APILEVEL < 2
-    :pimpl(new md::impl())
-#endif // APILEVEL < 2
-{}
+{
+    md_init();
+
+    pimpl = md_impl_create ? md_impl_create() : NULL;
+}
 
 md::~md()
 {
-#if APILEVEL < 2
-    delete pimpl;
-#endif // APILEVEL < 2
+    if (md_impl_destroy)
+        md_impl_destroy(pimpl);
 }
 
 double md::location_altitude() const
 {
-#if APILEVEL < 2
-    return pimpl->location_altitude();
-#else // APILEVEL >= 2
-    throw std::runtime_error("Method md::location_altitude() is deprecated! Use geo::altitude() instead!");
-#endif // APILEVEL >= 2
+    if (version::apilevel() >= 2)
+        throw std::runtime_error("Method md::location_altitude() is deprecated! Use geo::altitude() instead!");
+
+    return md_impl_location_altitude(pimpl);
 }

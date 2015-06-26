@@ -28,29 +28,34 @@ BINDIR = bin/android
 OBJDIR = obj/android
 endif
 
-LIBV1 = $(BINDIR)/libv1/libv.$(so)
-LIBV2 = $(BINDIR)/libv2/libv.$(so)
+LIBV1   = $(BINDIR)/libv1/libv.$(so)
+LIBV2   = $(BINDIR)/libv2/libv.$(so)
+LIBVCXX = $(BINDIR)/libvcxx.a
 
 APP = $(BINDIR)/app
 APPLIB = $(BINDIR)/libapp.so
 
-LIBV1_SOURCES = src/version.cpp src/geo.cpp src/md.cpp
-LIBV2_SOURCES = $(LIBV1_SOURCES) src/map.cpp
+LIBV1_SOURCES   = src/version-impl.cpp src/geo-impl.cpp src/md-impl.cpp
+LIBV2_SOURCES   = $(LIBV1_SOURCES) src/map-impl.cpp
+LIBVCXX_SOURCES = src/version.cpp src/geo.cpp src/md.cpp src/map.cpp
 
 APPLIB_SOURCES = test/applib.cpp
 APP_SOURCES    = test/app.cpp
 
 ifeq (,$(strip $(NDK)))
 CXX := g++
+AR  := ar
 else
 CXX := $(NDK)/toolchains/arm-linux-androideabi-4.9/prebuilt/$(HOST_OS)-$(HOST_ARCH)/bin/arm-linux-androideabi-g++
 CXX += -march=armv7-a -mfloat-abi=softfp -mfpu=vfpv3-d16 -mthumb
 CXX += --sysroot=$(NDK)/platforms/android-9/arch-arm
 CXX += -I$(NDK)/sources/cxx-stl/gnu-libstdc++/4.9/include
 CXX += -I$(NDK)/sources/cxx-stl/gnu-libstdc++/4.9/libs/armeabi-v7a/include
+
+AR  := $(NDK)/toolchains/arm-linux-androideabi-4.9/prebuilt/$(HOST_OS)-$(HOST_ARCH)/bin/arm-linux-androideabi-ar
 endif
 
-CXXFLAGS := -O2
+CXXFLAGS := -O0 -g
 CXXFLAGS += -fPIC
 CXXFLAGS += -Iinclude
 
@@ -59,14 +64,19 @@ ifneq (,$(strip $(NDK)))
 LDFLAGS += -L$(NDK)/sources/cxx-stl/gnu-libstdc++/4.9/libs/armeabi-v7a
 LDFLAGS += -L$(NDK)/sources/crystax/libs/armeabi-v7a
 LDFLAGS += -lgnustl_shared
+else
+ifeq (linux,$(HOST_OS))
+LDFLAGS += -ldl
+endif
 endif
 
 DEVPATH := /data/local/tmp/cxxapi
 
-LIBV1_OBJECTS  := $(patsubst %.cpp,$(OBJDIR)/libv1/%.o,$(LIBV1_SOURCES))
-LIBV2_OBJECTS  := $(patsubst %.cpp,$(OBJDIR)/libv2/%.o,$(LIBV2_SOURCES))
-APPLIB_OBJECTS := $(patsubst %.cpp,$(OBJDIR)/applib/%.o,$(APPLIB_SOURCES))
-APP_OBJECTS    := $(patsubst %.cpp,$(OBJDIR)/app/%.o,$(APP_SOURCES))
+LIBV1_OBJECTS   := $(patsubst %.cpp,$(OBJDIR)/libv1/%.o,$(LIBV1_SOURCES))
+LIBV2_OBJECTS   := $(patsubst %.cpp,$(OBJDIR)/libv2/%.o,$(LIBV2_SOURCES))
+LIBVCXX_OBJECTS := $(patsubst %.cpp,$(OBJDIR)/libvcxx/%.o,$(LIBVCXX_SOURCES))
+APPLIB_OBJECTS  := $(patsubst %.cpp,$(OBJDIR)/applib/%.o,$(APPLIB_SOURCES))
+APP_OBJECTS     := $(patsubst %.cpp,$(OBJDIR)/app/%.o,$(APP_SOURCES))
 
 .PHONY: run
 ifeq (,$(strip $(NDK)))
@@ -91,7 +101,7 @@ run: all
 	adb shell 'chmod 0700 $(DEVPATH)/$(notdir $(APP))'
 	@echo "=== Run with libv1:"
 	adb shell 'cd $(DEVPATH) && LD_LIBRARY_PATH=$(DEVPATH):$(DEVPATH)/libv1 ./$(notdir $(APP))'
-	@echo "=== RUn with libv2:"
+	@echo "=== Run with libv2:"
 	adb shell 'cd $(DEVPATH) && LD_LIBRARY_PATH=$(DEVPATH):$(DEVPATH)/libv2 ./$(notdir $(APP))'
 endif
 
@@ -105,16 +115,22 @@ clean:
 $(BINDIR)/libv1/:
 	mkdir -p $@
 
-$(OBJDIR)/libv1/src:
+$(BINDIR)/libv2/:
 	mkdir -p $@
 
-$(BINDIR)/libv2/:
+$(BINDIR):
+	mkdir -p $@
+
+$(OBJDIR)/libv1/src:
 	mkdir -p $@
 
 $(OBJDIR)/libv2/src:
 	mkdir -p $@
 
-$(BINDIR):
+$(OBJDIR)/libvcxx/:
+	mkdir -p $@
+
+$(OBJDIR)/libvcxx/src:
 	mkdir -p $@
 
 $(OBJDIR)/app/test:
@@ -123,17 +139,20 @@ $(OBJDIR)/app/test:
 $(OBJDIR)/applib/test:
 	mkdir -p $@
 
-$(APP): $(APP_OBJECTS) $(APPLIB) $(LIBV1) $(LIBV2) $(MAKEFILE_LIST) | $(dir $(APP))
-	$(CXX) -o $@ $(APP_OBJECTS) -fPIE -pie -L$(dir $(APPLIB)) -L$(BINDIR)/libv2 -lapp -lv $(LDFLAGS)
+$(APP): $(APP_OBJECTS) $(APPLIB) $(LIBVCXX) $(LIBV1) $(LIBV2) $(MAKEFILE_LIST) | $(dir $(APP))
+	$(CXX) -o $@ $(APP_OBJECTS) -fPIE -pie -L$(dir $(APPLIB)) -L$(dir $(LIBV2)) -lapp -lv $(LDFLAGS)
 
-$(APPLIB): $(APPLIB_OBJECTS) $(LIBV1) $(LIBV2) $(MAKEFILE_LIST) | $(dir $(APPLIB))
-	$(CXX) -shared -fPIC -o $@ $(APPLIB_OBJECTS) -L$(BINDIR)/libv2 -lv $(LDFLAGS)
+$(APPLIB): $(APPLIB_OBJECTS) $(LIBVCXX) $(LIBV1) $(LIBV2) $(MAKEFILE_LIST) | $(dir $(APPLIB))
+	$(CXX) -shared -fPIC -o $@ $(APPLIB_OBJECTS) -L$(dir $(LIBVCXX)) -L$(dir $(LIBV2)) -lvcxx -lv $(LDFLAGS)
 
 $(LIBV1): $(LIBV1_OBJECTS) $(MAKEFILE_LIST) | $(dir $(LIBV1))
 	$(CXX) -shared -Wl,-$(soname),libv.$(so) -fPIC -o $@ $(LIBV1_OBJECTS) $(LDFLAGS)
 
 $(LIBV2): $(LIBV2_OBJECTS) $(MAKEFILE_LIST) | $(dir $(LIBV2))
 	$(CXX) -shared -Wl,-$(soname),libv.$(so) -fPIC -o $@ $(LIBV2_OBJECTS) $(LDFLAGS)
+
+$(LIBVCXX): $(LIBVCXX_OBJECTS) $(LIBV1) $(LIBV2) $(MAKEFILE_LIST) | $(dir $(LIBVCXX))
+	$(AR) rcs $@ $(LIBVCXX_OBJECTS)
 
 $(LIBV1_OBJECTS): $(LIBV1_SOURCES)
 $(LIBV2_OBJECTS): $(LIBV2_SOURCES)
@@ -144,8 +163,11 @@ $(OBJDIR)/libv1/%.o: %.cpp $(MAKEFILE_LIST) | $(OBJDIR)/libv1/src
 $(OBJDIR)/libv2/%.o: %.cpp $(MAKEFILE_LIST) | $(OBJDIR)/libv2/src
 	$(CXX) $(CXXFLAGS) -DAPILEVEL=2 -c -o $@ $<
 
+$(OBJDIR)/libvcxx/%.o: %.cpp $(MAKEFILE_LIST) | $(OBJDIR)/libvcxx/src
+	$(CXX) $(CXXFLAGS) -DAPILEVEL=2 -DLIBV='"libv.$(so)"' -c -o $@ $<
+
 $(OBJDIR)/app/%.o: %.cpp $(MAKEFILE_LIST) | $(OBJDIR)/app/test $(APPLIB)
 	$(CXX) $(CXXFLAGS) -DAPILEVEL=2 -c -o $@ $<
 
-$(OBJDIR)/applib/%.o: %.cpp $(MAKEFILE_LIST) | $(OBJDIR)/applib/test $(LIBV1) $(LIBV2)
+$(OBJDIR)/applib/%.o: %.cpp $(MAKEFILE_LIST) | $(OBJDIR)/applib/test $(LIBVCXX) $(LIBV1) $(LIBV2)
 	$(CXX) $(CXXFLAGS) -DAPILEVEL=2 -c -o $@ $<
